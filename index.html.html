@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로봇동아리 부품 신청 시스템</title>
+    <!-- [중요] 부장님이 주신 설정값과 100% 호환되는 라이브러리를 불러옵니다 -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <!-- 엑셀 저장용 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        /* 부장님의 기존 UI 디자인 유지 */
+        body { font-family: 'Pretendard', sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        .input-group { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; background: #f9f9f9; padding: 20px; border-radius: 10px; }
+        input, select, button { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+        button { cursor: pointer; transition: 0.3s; font-weight: bold; }
+        .btn-add { background-color: #2ecc71; color: white; border: none; flex-grow: 1; }
+        .btn-add:hover { background-color: #27ae60; }
+        .btn-excel { background-color: #3498db; color: white; border: none; width: 100%; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #eee; padding: 12px; text-align: center; }
+        th { background-color: #f8f9fa; }
+        .status-badge { padding: 4px 8px; border-radius: 20px; font-size: 12px; }
+        .status-wait { background: #ffeaa7; color: #d35400; }
+        .status-ok { background: #55efc4; color: #00b894; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🤖 로봇동아리 부품 신청 목록</h2>
+        
+        <!-- 입력 영역 -->
+        <div class="input-group">
+            <input type="text" id="p_name" placeholder="부품명" style="flex:2">
+            <input type="number" id="p_cnt" placeholder="수량" style="flex:1">
+            <input type="number" id="p_price" placeholder="단가" style="flex:1">
+            <input type="text" id="p_link" placeholder="링크(URL)" style="flex:2">
+            <select id="p_proj" style="flex:1">
+                <option value="A팀">A팀</option>
+                <option value="B팀">B팀</option>
+                <option value="공통">공통</option>
+            </select>
+            <button class="btn-add" onclick="add()">추가하기</button>
+        </div>
+
+        <button class="btn-excel" onclick="dlXls()">📊 동아리 전체 내역 엑셀 다운로드</button>
+
+        <!-- 신청 목록 테이블 -->
+        <table id="listTable">
+            <thead>
+                <tr>
+                    <th>프로젝트</th>
+                    <th>부품명</th>
+                    <th>수량</th>
+                    <th>단가</th>
+                    <th>합계</th>
+                    <th>상태</th>
+                    <th>관리</th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // 부장님이 구성 탭에서 주신 바로 그 설정값입니다
+        const firebaseConfig = {
+            apiKey: "AIzaSyCNlhOH6YMgUBfsniMA9r6SPbx0NhOnGg",
+            authDomain: "robotclub-budget.firebaseapp.com",
+            databaseURL: "https://robotclub-budget-default-rtdb.firebaseio.com",
+            projectId: "robotclub-budget",
+            storageBucket: "robotclub-budget.firebasestorage.app",
+            messagingSenderId: "1019836816576",
+            appId: "1:1019836816576:web:5e65344fe867a77af1e125",
+            measurementId: "G-5PYSZ3PJ0B"
+        };
+
+        // 파이어베이스 초기화 및 리얼타임 데이터베이스 연결
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        let items = [];
+
+        // 데이터가 변경될 때마다 화면을 즉시 갱신 (실시간 동기화)[cite: 1]
+        window.onload = function() {
+            db.ref('budgetList').on('value', (snapshot) => {
+                const data = snapshot.val();
+                items = data ? data : [];
+                update();
+            });
+        };
+
+        // 파이어베이스 서버에 데이터를 업데이트하는 함수[cite: 1]
+        function sv() {
+            db.ref('budgetList').set(items);
+        }
+
+        // 새로운 부품 추가 함수
+        function add() {
+            const n = document.getElementById('p_name').value;
+            const c = parseInt(document.getElementById('p_cnt').value);
+            const p = parseInt(document.getElementById('p_price').value);
+            const l = document.getElementById('p_link').value;
+            const j = document.getElementById('p_proj').value;
+
+            if(!n || isNaN(c) || isNaN(p)) return alert("부품명, 수량, 단가를 확인해주세요!");
+
+            items.push({ project: j, name: n, cnt: c, price: p, link: l, status: '대기' });
+            sv(); // 서버로 저장[cite: 1]
+            
+            // 입력창 초기화
+            document.getElementById('p_name').value = '';
+            document.getElementById('p_cnt').value = '';
+            document.getElementById('p_price').value = '';
+            document.getElementById('p_link').value = '';
+        }
+
+        // 화면 테이블 업데이트
+        function update() {
+            const tbody = document.getElementById('tbody');
+            tbody.innerHTML = '';
+            items.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                const total = item.cnt * item.price;
+                tr.innerHTML = `
+                    <td>${item.project}</td>
+                    <td><a href="${item.link}" target="_blank">${item.name}</a></td>
+                    <td>${item.cnt}</td>
+                    <td>${item.price.toLocaleString()}원</td>
+                    <td><b>${total.toLocaleString()}원</b></td>
+                    <td><span class="status-badge ${item.status === '대기' ? 'status-wait' : 'status-ok'}">${item.status}</span></td>
+                    <td><button onclick="del(${index})" style="background:#ff7675; color:white; border:none; border-radius:5px; padding:5px;">삭제</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 항목 삭제 함수
+        function del(idx) {
+            if(confirm("정말 삭제할까요?")) {
+                items.splice(idx, 1);
+                sv();
+            }
+        }
+
+        // 엑셀 다운로드 (기존 부장님 코드 유지)
+        function dlXls() {
+            if(items.length === 0) return alert("저장된 데이터가 없습니다.");
+            const ws = XLSX.utils.json_to_sheet(items);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "신청내역");
+            XLSX.writeFile(wb, "robot_club_budget_final.xlsx");
+        }
+    </script>
+</body>
+</html>
